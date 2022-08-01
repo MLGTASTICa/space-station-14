@@ -1,4 +1,9 @@
 using Content.Shared.Alert;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.Prototypes;
+using Content.Shared.Actions.ActionTypes;
+using Robust.Shared.Utility;
+
 
 namespace Content.Server.Stamina
 {
@@ -25,7 +30,7 @@ namespace Content.Server.Stamina
 
         // a hard value added on top of the base regen, its added before multipliers are calculated.
         [ViewVariables(VVAccess.ReadWrite)]
-        public float RegenRateAdded = 5f;
+        public float RegenRateAdded = 0f;
 
         // the actual regen rate after calculations , updated by the system.
         [ViewVariables(VVAccess.ReadWrite)]
@@ -40,6 +45,23 @@ namespace Content.Server.Stamina
         [ViewVariables(VVAccess.ReadWrite)]
         [DataField("noRegenTicks")]
         public byte NoRegenTicks = 0;
+
+        [DataField("slideCost")]
+        public byte SlideCost = 200;
+
+        [DataField("canSlide")]
+        public bool CanSlide = true;
+
+        [DataField("slideAction")]
+        public InstantAction InvisibleWallAction = new()
+        {
+            UseDelay = TimeSpan.FromSeconds(30),
+            Icon = new SpriteSpecifier.Texture(new ResourcePath("Structures/Walls/solid.rsi/full.png")),
+            Name = "mime-invisible-wall",
+            Description = "mime-invisible-wall-desc",
+            Priority = -1,
+            Event = new InvisibleWallActionEvent(),
+        };
 
         // Stamina
         [ViewVariables(VVAccess.ReadOnly)]
