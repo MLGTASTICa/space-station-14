@@ -1,4 +1,4 @@
-﻿namespace Content.Shared.Alert
+namespace Content.Shared.Alert
 {
     /// <summary>
     /// Every kind of alert. Corresponds to alertType field in alert prototypes defined in YML
@@ -27,6 +27,10 @@
         Thirsty,
         Parched,
         Stamina,
+        StaminaLevelCollapsed,
+        StaminaLevelTired,
+        StaminaLevelEnergetic,
+        StaminaLevelOvercharged,
         Pulled,
         Pulling,
         Magboots,
