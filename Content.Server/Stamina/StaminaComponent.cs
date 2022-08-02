@@ -18,7 +18,7 @@ namespace Content.Server.Stamina
     }
 
     [RegisterComponent]
-    public sealed class StaminaComponent : Component
+    public sealed class StaminaCombatComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
         [DataField("baseRegenRate")]
@@ -52,16 +52,6 @@ namespace Content.Server.Stamina
         [DataField("canSlide")]
         public bool CanSlide = true;
 
-        [DataField("slideAction")]
-        public InstantAction InvisibleWallAction = new()
-        {
-            UseDelay = TimeSpan.FromSeconds(30),
-            Icon = new SpriteSpecifier.Texture(new ResourcePath("Structures/Walls/solid.rsi/full.png")),
-            Name = "mime-invisible-wall",
-            Description = "mime-invisible-wall-desc",
-            Priority = -1,
-            Event = new InvisibleWallActionEvent(),
-        };
 
         // Stamina
         [ViewVariables(VVAccess.ReadOnly)]

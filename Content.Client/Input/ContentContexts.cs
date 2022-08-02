@@ -83,6 +83,7 @@ namespace Content.Client.Input
             common.AddFunction(ContentKeyFunctions.Loadout7);
             common.AddFunction(ContentKeyFunctions.Loadout8);
             common.AddFunction(ContentKeyFunctions.Loadout9);
+            common.AddFunction(ContentKeyFunctions.Slide);
 
             var aghost = contexts.New("aghost", "common");
             aghost.AddFunction(EngineKeyFunctions.MoveUp);

@@ -34,6 +34,7 @@
   - type: AiFactionTag
     factions:
     - NanoTrasen
+  - type: StaminaCombat
 
 - type: entity
   name: centcom official
