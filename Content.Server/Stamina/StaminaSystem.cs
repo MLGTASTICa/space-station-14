@@ -54,14 +54,14 @@ namespace Content.Server.Stamina
             {
                 //if (_jetpack.IsUserFlying((EntityUid)session.AttachedEntity))
                 //    return false;
-                if (stam.CanSlide && stam.CurrentStamina > stam.SlideCost && TryComp(session.AttachedEntity, out PhysicsComponent? physics))
+                //stam.CurrentStamina > stam.SlideCos
+                if (stam.CanSlide && TryComp(session.AttachedEntity, out PhysicsComponent? physics) && TryComp(session.AttachedEntity, out TransformComponent? transform))
                 {
                     Logger.Log(LogLevel.Info, "Slided");
                     UpdateStamina(stam, -stam.SlideCost);
-                    for (int i = 0; i < 11; i++)
-                    {
-                        _timer.AddTimer(new Timer(500 * i, false, () => physics.LinearVelocity *= 2));
-                    }
+
+                    //  physics.ApplyLinearImpulse(physics.LinearVelocity * transform. * 10);
+                    physics.LinearVelocity *= 10;
                     return true;
                 }
 
