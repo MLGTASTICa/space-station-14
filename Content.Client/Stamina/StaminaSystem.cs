@@ -28,18 +28,34 @@ using Robust.Shared.Player;
 
 namespace Content.Client.Stamina
 {
-    public class StaminaCombatSystem : SharedStaminaCombatSystem
+    public sealed class StaminaCombatSystem : SharedStaminaCombatSystem
     {
-        [Dependency] private readonly IRobustRandom _random = default!;
-        [Dependency] private readonly AlertsSystem _alerts = default!;
-        [Dependency] private readonly MovementSpeedModifierSystem _movement = default!;
-        [Dependency] private readonly SharedJetpackSystem _jetpack = default!;
-        [Dependency] private readonly SharedContainerSystem _container = default!;
-        [Dependency] private readonly ITimerManager _timer = default!;
+        [Dependency] private readonly IGameTiming _timing = default!;
         [Dependency] private readonly StandingStateSystem _standing = default!;
-        [Dependency] private readonly SharedStunSystem _stun = default!;
-        [Dependency] private readonly SharedPhysicsSystem _phys = default!;
-        [Dependency] private readonly SharedGravitySystem _gravity = default!;
+
+        public override void Initialize()
+        {
+            base.Initialize();
+            SubscribeLocalEvent<SharedStaminaCombatComponent, ComponentHandleState>(HandleCompState);
+            //UpdatesOutsidePrediction = false;
+
+            CommandBinds.Builder
+                .Bind(ContentKeyFunctions.Slide, new PointerInputCmdHandler(HandleSlideAttempt))
+                .Register<SharedStaminaCombatSystem>();
+        }
+
+        private void HandleCompState(EntityUid uid, SharedStaminaCombatComponent component, ref ComponentHandleState args)
+        {
+            _sawmill.Warning("Update received for client-stamina");
+            if (args.Current is not StaminaCombatComponentState state) return;
+            component.CurrentStamina = state.CurrentStamina;
+            component.CanSlide = state.CanSlide;
+            component.SlideCost = state.SlideCost;
+            component.ActualRegenRate = state.ActualRegenRate;
+            component.Stimulated = state.Stimulated;
+
+        }
+        
         public override bool HandleSlideAttempt(ICommonSession? session, EntityCoordinates coords, EntityUid uid)
         {
             if (base.HandleSlideAttempt(session, coords, uid))
@@ -48,6 +64,53 @@ namespace Content.Client.Stamina
                 return true;
             }
             return false;
+        }
+        
+        public override void Update(float frameTime)
+        {
+
+            _sliderFrameTime += frameTime;
+
+            if (_sliderFrameTime > 0.5)
+            {
+
+                foreach (SharedStaminaCombatComponent slidingStamina in _slidingComponents)
+                {
+                    slidingStamina.SlideTime -= _sliderFrameTime;
+                    if (slidingStamina.SlideTime < 0)
+                    {
+                        if (TryComp(slidingStamina.Owner, out MovementIgnoreGravityComponent? gravity) && TryComp(slidingStamina.Owner, out StandingStateComponent? state) &&
+                           TryComp(slidingStamina.Owner, out PhysicsComponent? physics) && TryComp(slidingStamina.Owner, out InputMoverComponent? input))
+                        {
+                            gravity.Weightless = false;
+                            _standing.Stand(state.Owner, state);
+                            physics.BodyType = Robust.Shared.Physics.BodyType.KinematicController;
+                            physics.LinearDamping -= 1.5f;
+                            input.CanMove = true;
+                            _movement.RefreshMovementSpeedModifiers(slidingStamina.Owner);
+                            _sawmill.Error("$Trying to remove Slider");
+
+                        }
+
+                    }
+                }
+
+                _slidingComponents.RemoveWhere((x) =>
+                {
+                    if (x.SlideTime < 0f)
+                    {
+                        _sawmill.Error("$Slider removed");
+                        return true;
+                    }
+                    return false;
+                });
+
+                _sliderFrameTime = 0;
+            }
+            // Can't predict this part since it unsynchronizes.
+            if (_timing.IsFirstTimePredicted)
+                base.Update(frameTime);
+           
         }
     }
 

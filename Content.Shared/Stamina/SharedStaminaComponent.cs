@@ -5,6 +5,9 @@ using Content.Shared.Actions.ActionTypes;
 using Robust.Shared.Utility;
 using Robust.Shared.Serialization;
 using Robust.Shared.Map;
+using Robust.Shared.Network;
+using Robust.Shared.GameObjects;
+using Robust.Shared.GameStates;
 
 
 
@@ -19,38 +22,21 @@ namespace Content.Shared.Stamina
         Energetic = 1 << 2,
         Overcharged = 1 << 3,
     }
-    [Serializable, NetSerializable]
-    public sealed class StaminaCombatComponentState : ComponentState
-    {
-        public float CurrentStamina;
-        public bool CanSlide;
-        public byte SlideCost;
-        public float ActualRegenRate;
-        public bool Stimulated;
 
-    }
-
-    [Serializable, NetSerializable]
-    public sealed class StaminaSlideEvent : EntityEventArgs
-    {
-        public EntityCoordinates Coords;
-
-        public StaminaSlideEvent(EntityCoordinates coords)
-        {
-            Coords = coords;
-        }
-
-    }
+    [NetworkedComponent]
     public abstract class SharedStaminaCombatComponent : Component
     {
         [ViewVariables(VVAccess.ReadWrite)]
         public StaminaThreshold CurrentStaminaThreshold;
 
         [ViewVariables(VVAccess.ReadWrite)]
+        public StaminaThreshold LastStaminaThreshold;
+
+        [ViewVariables(VVAccess.ReadWrite)]
         public float CurrentStamina;
 
         [ViewVariables(VVAccess.ReadWrite)]
-        public float ActualRegenRate = 5f;
+        public float ActualRegenRate;
 
         // controls if the stamina can go to levels of energetic or overchargd
         [ViewVariables(VVAccess.ReadWrite)]
@@ -81,6 +67,7 @@ namespace Content.Shared.Stamina
             { StaminaThreshold.Energetic, AlertType.StaminaLevelEnergetic },
             { StaminaThreshold.Overcharged, AlertType.StaminaLevelOvercharged },
         };
+        
 
 
     }

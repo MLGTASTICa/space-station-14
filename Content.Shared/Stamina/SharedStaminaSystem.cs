@@ -20,27 +20,25 @@ using Content.Shared.Movement.Components;
 using Content.Shared.Movement.Systems;
 using Content.Shared.Movement.Components;
 using Content.Shared.Gravity;
-using Robust.Shared.Serialization;
 using Robust.Shared.GameStates;
-using Robust.Shared.Network;
-using Robust.Shared.Player;
-using System.Collections;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+using Robust.Shared.Prototypes;
+using Content.Shared.Actions.ActionTypes;
+using Robust.Shared.Utility;
+using Robust.Shared.Serialization;
+using Robust.Shared.Map;
 
 namespace Content.Shared.Stamina
 {
     [UsedImplicitly]
     public abstract class SharedStaminaCombatSystem : EntitySystem
     {
-        [Dependency] private readonly IRobustRandom _random = default!;
         [Dependency] private readonly AlertsSystem _alerts = default!;
-        [Dependency] private readonly MovementSpeedModifierSystem _movement = default!;
+        [Dependency] public readonly MovementSpeedModifierSystem _movement = default!;
         [Dependency] private readonly SharedJetpackSystem _jetpack = default!;
         [Dependency] private readonly SharedContainerSystem _container = default!;
-        [Dependency] private readonly ITimerManager _timer = default!;
         [Dependency] private readonly StandingStateSystem _standing = default!;
-        [Dependency] private readonly SharedStunSystem _stun = default!;
         [Dependency] private readonly SharedPhysicsSystem _phys = default!;
-        [Dependency] private readonly SharedGravitySystem _gravity = default!;
 
         public ISawmill _sawmill = default!;
         public float _accumulatedFrameTime;
@@ -53,39 +51,85 @@ namespace Content.Shared.Stamina
             base.Initialize();
 
             _sawmill = Logger.GetSawmill("stamina");
-            SubscribeLocalEvent<SharedStaminaCombatComponent, ComponentGetState>(GetCompState);
-            SubscribeLocalEvent<SharedStaminaCombatComponent, ComponentHandleState>(HandleCompState);
             SubscribeLocalEvent<SharedStaminaCombatComponent, ComponentStartup>(OnComponentStartup);
+            SubscribeLocalEvent<SharedStaminaCombatComponent, RefreshMovementSpeedModifiersEvent>(OnRefreshMovespeed);
 
-            CommandBinds.Builder
-                .Bind(ContentKeyFunctions.Slide, new PointerInputCmdHandler(HandleSlideAttempt))
-                .Register<SharedStaminaCombatSystem>();
+
         }
-        private void OnComponentStartup(EntityUid uid, SharedStaminaCombatComponent component, ComponentStartup args)
+        public virtual void OnComponentStartup(EntityUid uid, SharedStaminaCombatComponent component, ComponentStartup args)
         {
             component.CurrentStamina = component.StaminaThresholds[StaminaThreshold.Normal];
             component.CurrentStaminaThreshold = StaminaThreshold.Normal;
-
-            UpdateEffects(component);
+            // Necesarry for proper sliding
+            EnsureComp<MovementIgnoreGravityComponent>(component.Owner);
 
         }
+
+        #region ComponentState and Event
+        [Serializable, NetSerializable]
+        public sealed class StaminaCombatComponentState : ComponentState
+        {
+            public float CurrentStamina;
+            public bool CanSlide;
+            public byte SlideCost;
+            public float ActualRegenRate;
+            public bool Stimulated;
+
+            public StaminaCombatComponentState(float currentStamina, bool canSlide, byte slideCost, float actualRegenRate, bool stimulated)
+            {
+                CurrentStamina = currentStamina;
+                CanSlide = canSlide;
+                SlideCost = slideCost;
+                ActualRegenRate = actualRegenRate;
+                Stimulated = stimulated;
+            }
+
+
+        }
+
+
+        [Serializable, NetSerializable]
+        public sealed class StaminaSlideEvent : EntityEventArgs
+        {
+            public EntityCoordinates Coords;
+            public StaminaSlideEvent(EntityCoordinates coords)
+            {
+                Coords = coords;
+            }
+        }
+        #endregion
+
+        private void OnRefreshMovespeed(EntityUid uid, SharedStaminaCombatComponent component, RefreshMovementSpeedModifiersEvent args)
+        {
+            if (_jetpack.IsUserFlying(component.Owner))
+                return;
+
+            var mod = component.CurrentStaminaThreshold <= StaminaThreshold.Collapsed ? 0.7f : (component.CurrentStaminaThreshold == StaminaThreshold.Tired ? 0.9f : 1f);
+            args.ModifySpeed(mod, mod);
+        }
+
         public virtual bool HandleSlideAttempt(ICommonSession? session, EntityCoordinates coords, EntityUid uid)
         {
             _sawmill.Error("$Tried to slide");
-            if (TryComp(session?.AttachedEntity, out SharedStaminaCombatComponent? stam))
+            if (TryComp(session?.AttachedEntity, out SharedStaminaCombatComponent? stam) && stam.CanSlide)
             {
-                if (_jetpack.IsUserFlying(stam.Owner))
+                if (_jetpack.IsUserFlying(stam.Owner) || _container.IsEntityInContainer(stam.Owner))
                     return false;
-                if (stam.CanSlide && TryComp(stam.Owner, out PhysicsComponent? physics) && TryComp(stam.Owner, out StandingStateComponent? state))
+                if (TryComp(stam.Owner, out PhysicsComponent? physics) && TryComp(stam.Owner, out StandingStateComponent? state)
+                    && TryComp(stam.Owner, out MovementIgnoreGravityComponent? grav) && TryComp(stam.Owner, out InputMoverComponent? input))
                 {
+                    // too little to slide.
+                    if ((Math.Abs(physics.LinearVelocity.X) + Math.Abs(physics.LinearVelocity.Y)) < 2f)
+                        return false;
                     Logger.Log(LogLevel.Info, "Slided");
                     _phys.SetLinearVelocity(physics, physics.LinearVelocity * 4);
                     physics.LinearDamping += 1.5f;
                     physics.BodyType = Robust.Shared.Physics.BodyType.Dynamic; // Necesarry for linear dampening to be applied
-                    stam.SlideTime = (Math.Abs(physics.LinearVelocity.X)  + Math.Abs(physics.LinearVelocity.Y));
+                    stam.SlideTime = (Math.Abs(physics.LinearVelocity.X) + Math.Abs(physics.LinearVelocity.Y)) / 16;
+                    // no moving !!
+                    input.CanMove = false;
                     _standing.Down(stam.Owner, true, false, state);
                     UpdateStamina(stam, stam.SlideCost);
-                    MovementIgnoreGravityComponent grav = EnsureComp<MovementIgnoreGravityComponent>(stam.Owner);
                     grav.Weightless = true;
                     _slidingComponents.Add(stam);
                     return true;
@@ -133,83 +177,25 @@ namespace Content.Shared.Stamina
 
             return result;
 
-            // 1000f , 400f
-            /*
-             * 1000f == 1000f && 1000 < 400 F
-             * 
-             */
         }
         public void UpdateStamina(SharedStaminaCombatComponent component, float amount)
         {
-            component.CurrentStamina = Math.Clamp(component.CurrentStamina + amount, 0, component.StaminaThresholds[StaminaThreshold.Overcharged]);
-            _sawmill.Log(LogLevel.Debug, "Tried to update stamina");
+            _sawmill.Log(LogLevel.Debug, "$Tried to update stamina {0}", amount);
+            component.CurrentStamina = Math.Clamp(component.CurrentStamina + amount, 0f, component.StaminaThresholds[StaminaThreshold.Collapsed]);
+            StaminaThreshold last = component.CurrentStaminaThreshold;
             component.CurrentStaminaThreshold = GetStaminaThreshold(component, component.CurrentStamina);
-        }
-
-
-        private void HandleCompState(EntityUid uid, SharedStaminaCombatComponent component, ref ComponentHandleState args)
-        {
-            if (args.Current is not StaminaCombatComponentState state) return;
-            component.CurrentStamina = state.CurrentStamina;
-            component.CanSlide = state.CanSlide;
-            component.SlideCost = state.SlideCost;
-            component.ActualRegenRate = state.ActualRegenRate;
-            component.Stimulated = state.Stimulated;
-
-        }
-
-        private void GetCompState(EntityUid uid, SharedStaminaCombatComponent component, ref ComponentGetState args)
-        {
-            args.State = new StaminaCombatComponentState()
+            if (component.CurrentStaminaThreshold != component.LastStaminaThreshold)
             {
-                CurrentStamina = component.CurrentStamina,
-                CanSlide = component.CanSlide,
-                SlideCost = component.SlideCost,
-                ActualRegenRate = component.ActualRegenRate,
-                Stimulated = component.Stimulated
-            };
+                UpdateEffects(component);
+                component.LastStaminaThreshold = component.CurrentStaminaThreshold;
+            }
+                
         }
 
         public override void Update(float frameTime)
         {
             _accumulatedFrameTime += frameTime;
-            _sliderFrameTime += frameTime;
-            
-            if(_sliderFrameTime > 0.1)
-            {
-                
-                foreach(SharedStaminaCombatComponent slidingStamina in _slidingComponents)
-                {
-                    slidingStamina.SlideTime -= _accumulatedFrameTime;
-                    if(slidingStamina.SlideTime < 0)
-                    {
-                        if(TryComp(slidingStamina.Owner, out MovementIgnoreGravityComponent? gravity) && TryComp(slidingStamina.Owner, out StandingStateComponent? state) &&
-                           TryComp(slidingStamina.Owner, out PhysicsComponent? physics))
-                        {
-                            gravity.Weightless = false;
-                            _standing.Stand(state.Owner, state);
-                            physics.BodyType = Robust.Shared.Physics.BodyType.KinematicController;
-                            physics.LinearDamping -= 1.5f;
-
-                            _sawmill.Error("$Trying to remove Slider");
-
-                        }
-                        
-                    }
-                }
-
-                _slidingComponents.RemoveWhere((x) => {
-                    if (x.SlideTime < 0f)
-                    {
-                        _sawmill.Error("$Slider removed");
-                        return true;
-                    }
-                    return false;
-                });
-
-                _sliderFrameTime = 0;
-            }
-
+           
             if (_accumulatedFrameTime > 1)
             {
                 foreach (var component in EntityManager.EntityQuery<SharedStaminaCombatComponent>())
@@ -222,7 +208,7 @@ namespace Content.Shared.Stamina
                     UpdateStamina(component, -component.ActualRegenRate);
 
                 }
-                _accumulatedFrameTime--;
+                _accumulatedFrameTime -= 1;
             }
         }
 
