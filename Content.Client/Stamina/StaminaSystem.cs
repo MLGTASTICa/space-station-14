@@ -1,3 +1,4 @@
+
 using Content.Shared.Stamina;
 using JetBrains.Annotations;
 using Robust.Shared.Random;
@@ -41,34 +42,10 @@ namespace Content.Client.Stamina
         [Dependency] private readonly SharedGravitySystem _gravity = default!;
         public override bool HandleSlideAttempt(ICommonSession? session, EntityCoordinates coords, EntityUid uid)
         {
-            _sawmill.Error("$Tried to slide");
-            if (TryComp(session?.AttachedEntity, out SharedStaminaCombatComponent? stam))
+            if (base.HandleSlideAttempt(session, coords, uid))
             {
-                if (_jetpack.IsUserFlying(stam.Owner))
-                    return false;
-                if (stam.CanSlide && TryComp(stam.Owner, out PhysicsComponent? physics) && TryComp(stam.Owner, out StatusEffectsComponent? state))
-                {
-                    Logger.Log(LogLevel.Info, "Slided");
-                    UpdateStamina(stam, -stam.SlideCost);
-                    _phys.SetLinearVelocity(physics, physics.LinearVelocity * 3);
-                    MovementIgnoreGravityComponent grav = EnsureComp<MovementIgnoreGravityComponent>(stam.Owner);
-                    grav.Weightless = true;
-                    grav.Dirty();
-                    physics.Dirty();
-                    TimeSpan slide_time = TimeSpan.FromSeconds(Math.Abs(physics.LinearVelocity.X) / 15 + Math.Abs(physics.LinearVelocity.Y) / 15) - TimeSpan.FromMilliseconds(session.Ping);
-                    Timer.Spawn(slide_time , () =>
-                    {
-                        if (physics.Deleted) return;
-                        grav.Weightless = false;
-                        grav.Dirty();
-
-
-                    });
-
-                    return true;
-                }
-
-                return false;
+                RaiseNetworkEvent(new StaminaSlideEvent(coords));
+                return true;
             }
             return false;
         }
@@ -76,3 +53,4 @@ namespace Content.Client.Stamina
 
 
 }
+

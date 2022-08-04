@@ -4,7 +4,7 @@ namespace Content.Client.Stamina
 {
     [RegisterComponent]
     [ComponentReference(typeof(SharedStaminaCombatComponent))]
-    public class StaminaCombatComponent : SharedStaminaCombatComponent
+    public sealed class StaminaCombatComponent : SharedStaminaCombatComponent
     {
 
     }

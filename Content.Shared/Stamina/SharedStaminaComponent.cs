@@ -4,6 +4,7 @@ using Robust.Shared.Prototypes;
 using Content.Shared.Actions.ActionTypes;
 using Robust.Shared.Utility;
 using Robust.Shared.Serialization;
+using Robust.Shared.Map;
 
 
 
@@ -18,26 +19,27 @@ namespace Content.Shared.Stamina
         Energetic = 1 << 2,
         Overcharged = 1 << 3,
     }
-    [Serializable][NetSerializable]
+    [Serializable, NetSerializable]
     public sealed class StaminaCombatComponentState : ComponentState
     {
-        public float CurrentStamina { get; }
-        public bool CanSlide { get; }
+        public float CurrentStamina;
+        public bool CanSlide;
+        public byte SlideCost;
+        public float ActualRegenRate;
+        public bool Stimulated;
 
-        public byte SlideCost { get; }
+    }
 
-        public float ActualRegenRate { get; }
+    [Serializable, NetSerializable]
+    public sealed class StaminaSlideEvent : EntityEventArgs
+    {
+        public EntityCoordinates Coords;
 
-        public bool Stimulated { get; }
-
-        public StaminaCombatComponentState(float currentStamina, bool canSlide, byte slideCost, float actualRegenRate, bool stimulated)
+        public StaminaSlideEvent(EntityCoordinates coords)
         {
-            CurrentStamina = currentStamina;
-            CanSlide = canSlide;
-            SlideCost = slideCost;
-            ActualRegenRate = actualRegenRate;
-            Stimulated = stimulated;
+            Coords = coords;
         }
+
     }
     public abstract class SharedStaminaCombatComponent : Component
     {
@@ -59,6 +61,9 @@ namespace Content.Shared.Stamina
 
         [DataField("canSlide")]
         public bool CanSlide = true;
+
+        [ViewVariables(VVAccess.ReadOnly)]
+        public float SlideTime = 0f;
 
         public Dictionary<StaminaThreshold, float> StaminaThresholds { get; } = new()
         {

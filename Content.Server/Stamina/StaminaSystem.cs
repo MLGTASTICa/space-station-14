@@ -42,78 +42,38 @@ namespace Content.Server.Stamina
         [Dependency] private readonly SharedPhysicsSystem _phys = default!;
         [Dependency] private readonly SharedGravitySystem _gravity = default!;
 
+        public float _SecondaryAccumulatedFrameTime;
+
         public override void Initialize()
         {
             base.Initialize();
 
+
             SubscribeLocalEvent<StaminaCombatComponent, RefreshMovementSpeedModifiersEvent>(OnRefreshMovespeed);
             SubscribeLocalEvent<StaminaCombatComponent, ComponentStartup>(OnComponentStartup);
-            //SubscribeNetworkEvent<StaminaSlideEvent>(OnStaminaUpdate);
-
-            /*
-            CommandBinds.Builder
-                .Bind(ContentKeyFunctions.Slide, new PointerInputCmdHandler(HandleSlideAttempt))
-                .Register<StaminaCombatSystem>();
-            */
+            SubscribeNetworkEvent<StaminaSlideEvent>(OnStaminaUpdate);
         }
 
       
-        /*
+        
         private void OnStaminaUpdate(StaminaSlideEvent message, EntitySessionEventArgs eventArgs)
         {
            if( TryComp(eventArgs.SenderSession.AttachedEntity, out StaminaCombatComponent? stam))
             {
-                UpdateStamina(stam, -stam.SlideCost);
+                HandleSlideAttempt(eventArgs.SenderSession, message.Coords, (EntityUid)eventArgs.SenderSession.AttachedEntity);
             }
 
         }
-        */
+        
         private void OnComponentStartup(EntityUid uid, StaminaCombatComponent component, ComponentStartup args)
         {
             component.CurrentStamina = component.StaminaThresholds[StaminaThreshold.Normal];
-            component.CurrentStaminaThreshold = GetStaminaThreshold(component, component.CurrentStamina);
+            component.CurrentStaminaThreshold = StaminaThreshold.Normal;
             component.LastStaminaThreshold = component.CurrentStaminaThreshold;
                 
             UpdateEffects(component);
-            component.Dirty(EntityManager);
 
         }
-
-        
-        public override bool HandleSlideAttempt(ICommonSession? session, EntityCoordinates coords, EntityUid uid)
-        {
-            _sawmill.Error("$Tried to slide");
-            if (TryComp(session?.AttachedEntity, out StaminaCombatComponent? stam))
-            {
-                if (_jetpack.IsUserFlying(stam.Owner))
-                    return false;
-                if (stam.CanSlide && TryComp(stam.Owner, out PhysicsComponent? physics) && TryComp(stam.Owner, out StatusEffectsComponent? state))
-                {
-                    Logger.Log(LogLevel.Info, "Slided");
-                    UpdateStamina(stam, -stam.SlideCost);
-                    _phys.SetLinearVelocity(physics, physics.LinearVelocity * 3);
-                    MovementIgnoreGravityComponent grav = EnsureComp<MovementIgnoreGravityComponent>(stam.Owner);
-                    grav.Weightless = true;
-                    grav.Dirty(EntityManager);
-                    physics.Dirty(EntityManager);
-                    TimeSpan slide_time = TimeSpan.FromSeconds(Math.Abs(physics.LinearVelocity.X) / 15 + Math.Abs(physics.LinearVelocity.Y) / 15);
-                    Timer.Spawn(slide_time, () =>
-                    {
-                        if (physics.Deleted) return;
-                        grav.Weightless = false;
-                        // so the client doesn't think they are still fucking sliding around.
-                        grav.Dirty(EntityManager);
-                        physics.Dirty(EntityManager);
-                        
-                    }); 
-                    return true;
-                }
-
-                return false;
-            }
-            return false;
-        }
-       
 
         public void UpdateEffects(StaminaCombatComponent component)
         {
@@ -159,17 +119,11 @@ namespace Content.Server.Stamina
             args.ModifySpeed(mod, mod);
         }
 
-     
-        /*
-        public void UpdateStamina(StaminaCombatComponent component, float amount)
-        {
-            component.CurrentStamina = Math.Clamp(component.CurrentStamina + amount, 0, component.StaminaThresholds[StaminaThreshold.Overcharged]);
-        }
-        */
-
         public void ResetStamina(StaminaCombatComponent component)
         {
             component.CurrentStamina = component.StaminaThresholds[StaminaThreshold.Normal];
+            component.CurrentStaminaThreshold = StaminaThreshold.Normal;
+            component.LastStaminaThreshold = StaminaThreshold.Normal;
             component.Dirty();
         }
 
@@ -178,43 +132,27 @@ namespace Content.Server.Stamina
             component.ActualRegenRate = (component.BaseRegenRate + component.RegenRateAdded) * component.RegenRateMultiplier;
             component.Dirty();
         }
-        /*
-        private bool IsMovementThreshold(StaminaThreshold threshold)
-        {
-            switch (threshold)
-            {
-                case StaminaThreshold.Collapsed:
-                    return true;
-                case StaminaThreshold.Tired:
-                    return true;
-                case StaminaThreshold.Normal:
-                    return false;
-                case StaminaThreshold.Energetic:
-                    return true;
-                case StaminaThreshold.Overcharged:
-                    return true;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(threshold), threshold, null);
-            }
-        }
-        */
 
-        
         public override void Update(float frameTime)
         {
-            base.Update(frameTime);
-            _accumulatedFrameTime += frameTime;
 
-            if (_accumulatedFrameTime > 1)
+            base.Update(frameTime);
+            _SecondaryAccumulatedFrameTime += frameTime;
+
+            if (_SecondaryAccumulatedFrameTime > 1)
             {
+                _sawmill.Log(LogLevel.Debug, "Attempted Server-Side Tick");
                 foreach (var component in EntityManager.EntityQuery<StaminaCombatComponent>())
                 {
-                    if(component.CurrentStaminaThreshold != component.LastStaminaThreshold && TryComp(component.Owner, out MovementSpeedModifierComponent? movement))
+                    if (component.CurrentStaminaThreshold != component.LastStaminaThreshold && TryComp(component.Owner, out MovementSpeedModifierComponent? movement))
+                    {
                         _movement.RefreshMovementSpeedModifiers(component.Owner, movement);
-                    component.Dirty();
+                        component.LastStaminaThreshold = component.CurrentStaminaThreshold;
+                    }
+                    //component.Dirty();
 
                 }
-                _accumulatedFrameTime -= 1;
+                _SecondaryAccumulatedFrameTime--;
             }
         }
         
